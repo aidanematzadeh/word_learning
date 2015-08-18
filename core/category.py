@@ -9,9 +9,6 @@ try:
 except ImportError:
     print "[Import Warning:  nltk.corpus -> wordnet] Module not found, wordnet labeling not possible"
 
-#from hcluster import linkage, fcluster, pdist
-#from scipy.spatial.distance import pdist
-
 try:
     from sklearn.cluster import AgglomerativeClustering
 except ImportError:
@@ -19,30 +16,10 @@ except ImportError:
 
 
 
-#try:
-#    from mlabwrap import mlab
-#except ImportError:
-#    print "[Import Warning:  mlabwrap] Module not found, semantic clustering of categories not possible"
-
 from wmmapping import Meaning
 import constants as CONST
 import evaluate
 
-
-#BM Half done method of CategoryLearner? ::
-"""
-# AFSANEH: This method has to be modified, so that the meaning of the word is 
-    # an average of the meanings of all of its senses, weighted by their frequencies, 
-    # collected in self.wordlist. A uniformed probability distribution should be 
-    # returned for an unseen word.
-    def getWordMeaning(self, word):
-        meaning = Meaning(self.M)
-        return(meaning)
-        # meaning.update(dict([ (f,v) for (v,f) in self.learner.original_lex.getSortedPrims(word)]), 
-        # self.learner.original_lex.getUnseen(word))
-        # return dict([ (f,v) for (v,f) in self.learner.original_lex.getSortedPrims(word) ])
-
-"""
 
 
 class Category:
@@ -64,7 +41,7 @@ class Category:
     
     """
     def __init__(self, meaning_normalization, id, label, precision):
-        # TODO meaning normalization is the same as beta?
+        # Meaning normalization is the same as beta.
         self._meaning_normalization = meaning_normalization
         self._id = id
         self._label = label
@@ -72,7 +49,6 @@ class Category:
         self._words = {}
         self._meaning = Meaning(meaning_normalization)
         
-    #BM addNewWord   
     def add_word(self, word):
         """ 
         Add the word word to this category if it is not already present, 
@@ -84,17 +60,13 @@ class Category:
         else:
             self._words[word] += 1
             
-        #BM this was commented out, important?    
-        #self.updateMeaning(meaning)   
     
-    #BM updateBatchMeaning    
     def update_batch_meaning(self, lexicon, features):
         """
         Perform a batch update of this categories' meaning for all words of this
         category based on the Lexicon lexicon for all in list features.
         
         """
-        #BM Calculated differently than the update method...
         num_word_tokens = sum(self._words.values())
         
         # Get the weighted probably of each word(/feature) of this category
@@ -117,7 +89,6 @@ class Category:
         self._meaning._unseen = unseen
 
 
-    #BM updateMeaning 
     def update(self, word, old_meaning, lexicon, features):
         """
         Update this category meaning by averaging over the old Meaning 
@@ -128,8 +99,6 @@ class Category:
         """
         if word not in self._words:
             self.add_word(word)
-
-        #BM ask Afsaneh about wfreq which was here        
         num_word_tokens = len(self._words.keys()) 
 
         # Update this categories meaning probabilities by averaging over the
@@ -147,7 +116,6 @@ class Category:
         self._meaning._unseen += updated
         
 
-    #BM checkProbabilities
     def check_probs(self):
         """ Print information about this category. """
         meaning = self._meaning
@@ -259,7 +227,6 @@ class CategoryLearner:
             return (self._words_to_categories[word].keys())[-1]
         return -1
 
-    #BM categorizeWord
     def categorize(self, word, sim_type, beta, scene_features=None, wn_category=None, meaning=None):
         """
         Categorize word.
@@ -276,7 +243,6 @@ class CategoryLearner:
         score = [0, -1, ""] # Precision, ID, Label, last two for debugging
 
         for category in self._categories.values():
-            #BM Again, is this needed
             #if catname == "0":continue
             if wn_category is not None:
                 if category._label == wn_category and category._precision > score[0]:
@@ -305,16 +271,12 @@ class CategoryLearner:
                     score[0] = intersect
                     score[1] = category._id
                     score[2] = category._label
-
-
             
         return score[1]
  
-    #BM printCategoryLabel    
     def print_label(self, id):
         """ 
         Print the label and precision of that label for category with ID id.
-        
         """
         if id not in self._categories:
             print "No category with ID: ", id
@@ -326,7 +288,6 @@ class CategoryLearner:
         # the most frequent label
         for word in category._words.keys(): 
             label = self._wnlabels.wordnet_label(word)
-            #wordnet_category(word)
             
             if label == CONST.NONE: 
                 continue
@@ -348,7 +309,6 @@ class CategoryLearner:
         print "Label: ", label
         print "Precision: ", float(category_labels[label]/sum(category_labels.values()))
 
-    #BM printCategory
     def print_category(self, id):
         """ Print detailed category information. """
         category = self._categories[id]
@@ -359,13 +319,11 @@ class CategoryLearner:
         print category._meaning
         print "\n"
 
-    #BM checkProbabilities
     def check_probs(self):
         """ Print category probability information for all categories. """
         for category in self._categories.values():
             category.check_probs()
 
-    #BM getMeaning
     def prob(self, id, feature):
         """
         Return the probability of feature being part of the meaning of the 
@@ -376,7 +334,6 @@ class CategoryLearner:
             return self._categories[id]._meaning.prob(feature)
         return 0
         
-    #BM updateMeaning
     def update(self, id, word, old_meaning, lexicon, features):
         """
         Update category with category id ID, if it exists. The category meaning 
@@ -396,7 +353,6 @@ class CategoryLearner:
 
 AVOID_CLUSTERS = ["noun.process", "noun.Tops", "noun.relation", "noun.motive"]
 
-#BM cluster
 def semantic_clustering_categories(beta,  words, lexicon, features, wnlabels,  stopwords, pos=CONST.ALL, 
                                    n_clusters=30, linkage_method="weighted", sim="cosine"):
     """
