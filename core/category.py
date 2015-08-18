@@ -9,13 +9,14 @@ try:
 except ImportError:
     print "[Import Warning:  nltk.corpus -> wordnet] Module not found, wordnet labeling not possible"
 
+#from hcluster import linkage, fcluster, pdist
+#from scipy.spatial.distance import pdist
+
 try:
-    from sklearn.cluster import Ward, DBSCAN
+    from sklearn.cluster import AgglomerativeClustering
 except ImportError:
     print "[Import Warning:  sklearn.cluster] Module not found, semantic clustering of categories not possible"
 
-#from hcluster import linkage, fcluster, pdist
-#from scipy.spatial.distance import pdist
 
 
 #try:
@@ -102,6 +103,8 @@ class Category:
             for word in self._words.keys():
                 occurrences = self._words[word]
                 weighted_feature_prob += lexicon.prob(word, feature) * occurrences
+            
+            
             weighted_feature_prob = weighted_feature_prob / num_word_tokens
             self._meaning._meaning_probs[feature] = weighted_feature_prob
         
@@ -184,20 +187,15 @@ class CategoryLearner:
         pre-processing functions in category.py.
         
         """
-        #TODO change the name of the lexicon 
         self._meaning_normalization = meaning_normalization
         self._words_to_categories = {}
         self._categories = {}
 
- #       self._wordnet_categories = {}
-        
+        self._wnlabels = WordnetLabels()
+
         self.make_categories(categories_dictionary, lexicon, features)
-        #for id in self._categories.keys(): 
-        #     self.print_category(id)
-        #     self.print_label(id)
         
         
-    #BM makeCategories   
     def make_categories(self, categories, lexicon, features):
         """
         Populate this CategoryLearner object with categories (labeled with 
@@ -216,8 +214,7 @@ class CategoryLearner:
                 self.add_word(id, word)
                                    
             self._categories[id].update_batch_meaning(lexicon, features)
-        
-    #BM addCategory
+    
     def add_category(self, id, label, precision):
         """
         Create a new category with ID id, label label, and precision precision.
@@ -228,7 +225,6 @@ class CategoryLearner:
         self._categories[id] = Category(self._meaning_normalization, id, label, 
                                            precision)
 
-    #BM addWordToCategory
     def add_word(self, id, word):
         """ Add word word to the category with ID id. """
         if id not in self._categories:
@@ -242,7 +238,6 @@ class CategoryLearner:
         else:
             self._words_to_categories[word][id] = 1
     
-    #BM getWordCategory
     def word_category_label(self, word):
         """
         Return the label of the category that word appears in.
@@ -330,7 +325,9 @@ class CategoryLearner:
         # Find all the labels of words in this category, the true label is 
         # the most frequent label
         for word in category._words.keys(): 
-            label = wordnet_category(word)
+            label = self._wnlabels.wordnet_label(word)
+            #wordnet_category(word)
+            
             if label == CONST.NONE: 
                 continue
             
@@ -400,7 +397,7 @@ class CategoryLearner:
 AVOID_CLUSTERS = ["noun.process", "noun.Tops", "noun.relation", "noun.motive"]
 
 #BM cluster
-def semantic_clustering_categories(beta, words, lexicon, features, stopwords, pos=CONST.ALL, 
+def semantic_clustering_categories(beta,  words, lexicon, features, wnlabels,  stopwords, pos=CONST.ALL, 
                                    n_clusters=30, linkage_method="weighted", sim="cosine"):
     """
     Perform semantic clustering on the lists words and features, using the 
@@ -416,8 +413,6 @@ def semantic_clustering_categories(beta, words, lexicon, features, stopwords, po
     filtered_words = []
     meanings = []
     
-    print "Words so far: ", len(words)
-    
     features = list(features)
     features.sort()
     sorted_words = words.keys()
@@ -427,8 +422,7 @@ def semantic_clustering_categories(beta, words, lexicon, features, stopwords, po
         if pos != CONST.ALL:
             if word in stopwords or not word.endswith(pos):
                 continue
-    
-        label = wordnet_category(word)
+        label =  wnlabels.wordnet_label(word)
         # Do not use words with no label or are not in meaningful clusters
         if label == CONST.NONE or label in AVOID_CLUSTERS:
             continue
@@ -437,7 +431,6 @@ def semantic_clustering_categories(beta, words, lexicon, features, stopwords, po
         meaning = lexicon.meaning(word)
 
         for ind in range(len(features)):
-#            ind = features.index(feature)
             meaning_vec[ind] = meaning.prob(features[ind])
         
         meaning_vec[len(features)] = meaning.unseen_prob()
@@ -445,7 +438,6 @@ def semantic_clustering_categories(beta, words, lexicon, features, stopwords, po
         filtered_words.append(word)
         meanings.append(meaning_vec)
         
-
     print "Number of words in Clustering: ", len(filtered_words) 
     print "Compute structured hierarchical clustering..."
     
@@ -469,19 +461,28 @@ def semantic_clustering_categories(beta, words, lexicon, features, stopwords, po
  
     # Compute clustering
     st = time.time()   
-    #clusters = Ward(n_clusters).fit(meanings)
- 
-    distance = pdist(meanings, __distance)
-    z = linkage(distance, linkage_method)
+#    clusters = Ward(n_clusters).fit(meanings)
 
+    agclustering = AgglomerativeClustering(n_clusters=n_clusters, affinity='cosine', linkage='average')
+    
+    model = agclustering.fit(meanings)
+    clusters = model.labels_
+    print "clusters", model.labels_
+
+
+
+
+    #distance = pdist(meanings, __distance)
+    #z = linkage(distance, linkage_method)
   #  clusters = fcluster(z, 0.9 * distance.max(), 'distance')
-    clusters = fcluster(z, n_clusters, 'maxclust')
-
+    #clusters = fcluster(z, n_clusters, 'maxclust')
+    
+    
     print "Elaspsed time: ", time.time() - st
-    return form_categories_dict(clusters, filtered_words), clusters, filtered_words 
+    return form_categories_dict(clusters, filtered_words, wnlabels), clusters, filtered_words 
 
 #BM form_clusters
-def form_categories_dict(clusters, words):
+def form_categories_dict(clusters, words, wnlabels):
     """
     Form a category dictionary object based on the 2D array clusters, formed from
     the cluster operation, for the words in list words.
@@ -490,14 +491,13 @@ def form_categories_dict(clusters, words):
     (the wordnet label of that category) and "precision" (how precise the label is).
     
     """
-    num_clusters = numpy.max(clusters)
+    num_clusters = numpy.max(clusters) + 1
 
     # See docstring for dictionary categories' structure
-    #BM This has the +1 to not use categories[0], need to ask about this
     
     categories = {} 
-    #Note that cluster labels start from 1
-    for j in range(1, num_clusters + 1):
+    #Note that cluster labels start from 0
+    for j in range(0, num_clusters):
         categories[j] = {}
         categories[j]["words"] = []
    
@@ -506,8 +506,64 @@ def form_categories_dict(clusters, words):
         categories[clusters[i]]["words"].append(words[i])
 
     # Label each category using the wordnet labels
-    return label_categories(categories)
+    return label_categories(categories, wnlabels)
 
+
+def label_categories(categories, wnlabels):
+    """
+    categories is a dictionary of IDs to lists of words in that specific category.
+    Using the words each category will be given a label - the most frequent 
+    wordnet category of words in the given category - and precision - the number
+    of words in the category with the most frequent wordnet label normalized by
+    the total in the category. These are added as "label" and "precision" 
+    dictionary entries at the same level as "words".
+    
+    """
+    #Count for each label in the whole corpus
+    labels_count = {}
+
+    for category in categories.keys():
+        labels = {}
+        category_words_count = 0
+        
+        # Count the frequency of each label type of words in this category and
+        # the number of words in this category
+        for word in categories[category]["words"]:
+            label =  wnlabels.wordnet_label(word)
+
+            if label == CONST.NONE: 
+                continue
+            
+            if label not in labels:
+                labels[label] = 0
+            labels[label] += 1
+            #BM only labeled words are counted? But they're left in the category
+            category_words_count += 1
+
+        if len(labels) < 1:
+            continue
+        
+        # This category's label is the most frequent of all the words' labels
+        true_label = ""
+        freq = 0
+        for label in labels:
+            if labels[label] > freq:
+                freq = labels[label]
+                true_label = label
+            
+            if not labels_count.has_key(label):
+                labels_count[label] = 0
+            labels_count[label] += labels[label]
+
+
+        categories[category]["label"] = true_label
+        categories[category]["precision"] = float(freq) / category_words_count
+        categories[category]["freq"] = float(freq)
+
+    for category in categories:
+        categories[category]["recall"] = categories[category]["freq"] / labels_count[categories[category]["label"]]
+
+    return categories
         
 
 class WordnetLabels:
@@ -596,63 +652,9 @@ class WordnetLabels:
 #    Helper Functions
 #===============================================================================
 
-def label_categories(categories):
-    """
-    categories is a dictionary of IDs to lists of words in that specific category.
-    Using the words each category will be given a label - the most frequent 
-    wordnet category of words in the given category - and precision - the number
-    of words in the category with the most frequent wordnet label normalized by
-    the total in the category. These are added as "label" and "precision" 
-    dictionary entries at the same level as "words".
-    
-    """
-    #Count for each label in the whole corpus
-    labels_count = {}
+   
 
-    for category in categories.keys():
-        labels = {}
-        category_words_count = 0
-        
-        # Count the frequency of each label type of words in this category and
-        # the number of words in this category
-        for word in categories[category]["words"]:
-            label = wordnet_category(word)
-            if label == CONST.NONE: 
-                continue
-            
-            if label not in labels:
-                labels[label] = 0
-            labels[label] += 1
-            #BM only labeled words are counted? But they're left in the category
-            category_words_count += 1
-
-        if len(labels) < 1:
-            continue
-        
-        # This category's label is the most frequent of all the words' labels
-        true_label = ""
-        freq = 0
-        for label in labels:
-            if labels[label] > freq:
-                freq = labels[label]
-                true_label = label
-            
-            if not labels_count.has_key(label):
-                labels_count[label] = 0
-            labels_count[label] += labels[label]
-
-
-        categories[category]["label"] = true_label
-        categories[category]["precision"] = float(freq) / category_words_count
-        categories[category]["freq"] = float(freq)
-
-    for category in categories:
-        categories[category]["recall"] = categories[category]["freq"] / labels_count[categories[category]["label"]]
-
-    return categories
-    
-
-def form_wordnet_categories(words):
+def form_wordnet_categories(words, wnlabels):
     """
     Return a list of wordnet categories (lexname) for the given words.
     """
@@ -663,7 +665,8 @@ def form_wordnet_categories(words):
     wordnet_categories_dic = {}
 
     for i in range(len(words)):
-        label = wordnet_category(words[i])
+
+        label = wnlabels.wordnet_label(words[i])
 
         if label == CONST.NONE: 
             errors += 1
@@ -703,24 +706,17 @@ def tagged_corpus_categories(corpus_path):
     next_id = 1 #BM again, skip id=0
     corpus_file = open(corpus_path)
     line = corpus_file.readline()
-    
-    # Add words to their respective categories
-    while line != "":
-        tagged_words = re.findall("([^ ]+)\s", line.strip('\n')) 
-        for tagged in tagged_words:
-            (word,category) = tagged.split(':')
-            
-            if category not in pos_to_cat_id:
-                categories[next_id] = {}
-                categories[next_id]["words"] = set()
-                categories[next_id]["label"] = category
-                categories[next_id]["precision"] = 1
-                pos_to_cat_id[category] = next_id
-                next_id += 1
-                
-            categories[pos_to_cat_id[category]]["words"].add(word)
-    
-        line = indata.readline()   
+    if category not in pos_to_cat_id:
+        categories[next_id] = {}
+        categories[next_id]["words"] = set()
+        categories[next_id]["label"] = category
+        categories[next_id]["precision"] = 1
+        pos_to_cat_id[category] = next_id
+        next_id += 1
+        
+    categories[pos_to_cat_id[category]]["words"].add(word)
+
+    line = indata.readline()   
     
     return categories
 
