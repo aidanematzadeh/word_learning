@@ -1,4 +1,7 @@
-from graph_tool.all import *
+
+
+#from graph_tool.all import *
+
 #import matplotlib.pyplot as plt
 from operator import itemgetter
 
@@ -9,7 +12,7 @@ import evaluate
 
 import numpy as np
 import scipy.stats
-from scipy.misc import logsumexp
+#from scipy.misc import logsumexp
 import math, random
 
 import os, sys, copy

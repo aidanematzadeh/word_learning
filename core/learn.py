@@ -1,9 +1,11 @@
 import copy
 import math
 import numpy
+import scipy
 import re
 import sys
 import os
+
 import constants as CONST
 from category import *
 import input
@@ -80,7 +82,7 @@ class Learner:
         self._epsilon = config.param_float("epsilon")
         if self._epsilon <= 0:
             print "Config Error [epsilon] Must be non-zero positive : "+str(self._epsilon)
-            sys.exit(2)
+            #sys.exit(2)
         
         # Similarity
         self._theta = config.param_float("theta")
@@ -177,7 +179,7 @@ class Learner:
         self._last_time = {}
 
         self._stopwords = stopwords
-       
+        self._wnlabels = WordnetLabels() 
         self._context = []
         
         # Growing a semantic network 
@@ -282,9 +284,52 @@ class Learner:
         sim = evaluate.calculate_similarity(self._beta, lrnd_m, true_m, self._simtype)
         self._acquisition_scores[word] = sim
         return sim
+   
+
+
+    def calculate_prob_meaning(self, word, meaning, std):
+        """
+        p(m|w) = mul_f p(f=v|w) = mul_f normal(miu=p(f|w) , std, v)
+        """
+        prob_meaning = 1.0
+        for feature in meaning.seen_features(): 
+            mu = self._learned_lexicon.meaning(word).prob(feature)
+            
+            prob_meaning *= scipy.stats.norm(mu, std).pdf(meaning.prob(feature))
+
+#        print "p(m|w)", word, meaning_prob
+        return prob_meaning
+        
+    def calculate_referent_prob(self, word, meaning, std):
+        """
+        p(w|m) = p(m|w)p(w)/p(m) 
+               = p(m|w)freq(w)/ sum_w' p(m|w')freq(w')
+
+        p(m|w') = mul_f p(f=v|w') = normal(miu=p(f|w) , std, v)
+        """
+        
+        #print"-----rf------", word, meaning.seen_features()
+        #calculating p(m|w),  miu is p(f|w)
+        numerator = self.calculate_prob_meaning(word, meaning, std)
+        numerator *= self._wordsp.frequency(word)
+        
+        denom = 0.0
+        for other_word in self._wordsp.all_words(0):
+            denom += (self.calculate_prob_meaning(other_word, meaning, std) \
+            * self._wordsp.frequency(other_word))
+        
+        #print "numerator",  numerator, self._wordsp.frequency(word)
+        #print "denom", denom, numerator/denom
+        return numerator/denom
+
+
+
+                
+
+
     
     #BM updateWordFProb
-    def update_meaning_prob(self, word):
+    def update_meaning_prob(self, word, time=-1):
         """
         Update the meaning probabilities of word in this learner's lexicon.
         This is done by calculating the association between this word and all
@@ -292,6 +337,10 @@ class Learner:
         distribution.
         
         """
+
+        if time == -1:
+            time = self._time
+       
         Lambda = self.get_lambda()
    
         # Hash computed associations to avoid double calculating
@@ -299,44 +348,62 @@ class Learner:
    
         sum_assoc = 0.0
         for feature in self._features:
-            assoc = self.association(word, feature)
+            assoc = self.association(word, feature, time)
             associations[feature] = assoc
             sum_assoc += assoc
             
         sum_assoc += (self._beta * Lambda) # Smoothing
-        
+       
+        #TODO Aida coded Jan 27th 2015 -- for X&T
+        #print self._time, "-----------------------",word, self._wordsp.frequency(word),associations[feature] 
+        #Lambda = 1#1. #alpha=1, beta =1
+        #sum_assoc = self._wordsp.frequency(word) + 1 + 1 + 1#+ 1 + 1# + 99.0 +1 #+ 1 + 1 +  1 
+        #end of TODO 
+
         for feature in self._features:
             meaning_prob = (associations[feature] + Lambda) / sum_assoc
             self._learned_lexicon.set_prob(word, feature, meaning_prob)
-        
         prob_unseen = Lambda / sum_assoc
+       
+        
+        #TODO Aida coded
+        #prob_unseen = 99. / (99. + 1.) # -  (associations[feature] + Lambda) / sum_assoc
+        #prob_unseen = 1.0/float(self._beta)
+        #end of TODO
+        
+        
         self._learned_lexicon.set_unseen(word, prob_unseen)
     
     
-    def association(self, word, feature):
+    def association(self, word, feature, time):
         """ 
         Return the association score between word and feature. 
         If SUM is the association type then the total alignment probabilities 
         over time, of word being aligned with feature, is the association.
+        
         If ACT is the association type then an activation function using this
         learner's forget_decay value is used to calculate the association.
-        
         """
+        
         if self._assoc_type == CONST.SUM or self._assoc_type == CONST.DEC_SUM:
             return self._aligns.sum_alignments(word, feature)
         
         if self._assoc_type == CONST.ACT:
             # aligns is a dictionary of time--alignment_score pairs
             aligns = self._aligns.alignments(word, feature)
-            t = self._time
             
             assoc_sum = 0.0
             for t_pr,val in aligns.items():
                 align_decay = self._forget_decay / val
-                assoc_sum += (val / math.pow(t-t_pr+1, align_decay))
                 
+                #print val,  self._forget_decay, (time-t_pr+1), align_decay
+                #print  math.pow(time-t_pr+1, align_decay)
+                
+                assoc_sum += (val / math.pow(time-t_pr+1, align_decay))
+            
+            #TODO do we need the log
             return math.log1p(assoc_sum)
-        
+            
         
     #BM noveltyWord
     def novelty(self, word):
@@ -358,22 +425,31 @@ class Learner:
             return (1 - (1.0 / denom))
  
  
-    #BM updateMappingTables
     def calculate_alignments(self, words, features, outdir, category_learner=None):
         """
         Update the alignments for each combination of word-feature pairs from
         the list words and set features. 
-        
         """
 
         # for each word, update p(f|w) distribution
         if self._forget_flag:
+            print "forget flag"
             for word in words:
                 self.update_meaning_prob(word)
         
         
         category_flag = self._category_flag
+        if category_learner == None:
+            category_flag = False
+
         category_probs = {}
+        if category_flag:
+            # Can build categories
+            category_probs = self.calculate_category_probs(words, features,\
+            category_learner)
+        '''
+        # The following was used when we compared aw + learned ac to aw +uniformed ac
+        # We decided to compare aw to aw + learned ac
         prob = 1.0 / float(self._beta)
         if category_flag and category_learner is None:
             # In this case there is no category learner to use
@@ -385,10 +461,9 @@ class Learner:
         elif category_flag and category_learner is not None:
             # Can build categories
             category_probs = self.calculate_category_probs(words, features, 
-                                                          category_learner)
+                                                       category_learner)
+        '''
 
-       
-               
         # Begin calculating the new alignment of a word given a feature, as:
         # alignment(w|f) = (p(f|w) + ep) / (sum(w' in words)p(f|w') + alpha*ep)
         for feature in features:
@@ -407,25 +482,23 @@ class Learner:
 
             # Calculate alignment of each word 
             for word in words:
+                
+                
                 # alignment(w|f) = (p(f|w) + ep) / normalization
                 alignment = (self._learned_lexicon.prob(word,feature) + self._epsilon) / denom
                 
                 # The weight used in alignment calculation
                 #weight = 0.5  #used in cogsci 2012 paper
                 weight = self._wordsp.frequency(word) / (1.0 + self._wordsp.frequency(word))
-                
-                #print "word alignment", alignment
     
                 if category_flag:
                     alignment = weight * alignment
                     category_prob = category_probs[word][feature]
                     factor = (category_prob + self._epsilon) / category_denom
                     alignment += (1 - weight) * factor
-                    #print "category alignment", alignment
                 
                 if self._novelty_flag:
                     alignment *=  self.novelty(word)
-
                 # Record the alignment at this time step and update association.
                 if self._assoc_type == CONST.DEC_SUM:
                     self._aligns.add_decay_sum(word, feature, self._time, 
@@ -470,13 +543,10 @@ class Learner:
         categories = {}
         for word in words:
             categories[word] = category_learner.word_category(word)
-            
-            if self._tasktype != CONST.NWL: continue #TODO do we need this?
-            
+
             if categories[word] == -1: 
-                wn_category = wordnet_category(word)
+                wn_category = self._wnlabels.wordnet_label(word)
                 categories[word] = category_learner.categorize(word, simtype, b, None, wn_category) #features)
- 
             
             '''
             if word.endswith(":N") and word not in self._stopwords:
@@ -488,7 +558,6 @@ class Learner:
                     categories[word] = category_learner.categorize(word, simtype,
                                                                    b, wn_category)
             '''
-
 
         # Calculate word-feature probabilities for the meaning of the category 
         # that the word is in relative to the feature
@@ -586,20 +655,19 @@ class Learner:
                 (words, features) = corpus.next_pair()
                 continue
 
-            # TODO add a parameter 
+            # TODO add 3 parameters for stepsize, pos and nclusters
             # Cluster words every X steps
-            if self._time > 100  and self._time % 50 == 0\
+            if self._time > 100 and self._time % 1000 == 0\
                 and self._category_flag and self._tasktype is not None:
                 print "making categories"
                 seen_words = self._wordsp._words
                 lexicon = self._learned_lexicon             
                 stopwords = self._stopwords
                 all_features = self._all_features # All features in gold lexicon
-                
-                
                 seen_features = self._features # Seen Features
                 
-                clusters, labels, cwords = semantic_clustering_categories(self._beta,  seen_words, lexicon, all_features, stopwords, CONST.ALL, 40)
+                clusters, labels, cwords = semantic_clustering_categories(self._beta,  seen_words, lexicon, \
+                all_features, self._wnlabels, stopwords, CONST.N, 20)
                 category_learner = CategoryLearner(self._beta, clusters, lexicon, seen_features)
 
 

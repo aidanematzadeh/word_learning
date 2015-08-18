@@ -1,4 +1,5 @@
 import math
+import random
 
 """
 wmmapping.py
@@ -27,6 +28,11 @@ class Meaning:
         """
         self._meaning_probs = {}
         self._unseen = 1.0/float(beta)
+
+        #TODO 2015 Aida
+        #self._unseen = 99.0 / (99 + 1.)
+        
+        #
 
     #BM getValue
     def prob(self, feature):
@@ -69,8 +75,13 @@ class Meaning:
     
     def __str__(self):
         """ Format this meaning to print intelligibly."""
-        result = str(self.sorted_features()) + " "
-        result += "< " + str(self._unseen) + " >\n"
+        result = ""
+        for v,f in self.sorted_features():
+            result+= (f + ":%.2f " % v)
+        
+#        result = str(self.sorted_features()) + " "
+        
+        result += "< " + str(self._unseen) + " >"
         return result
 
 
@@ -116,7 +127,27 @@ class Lexicon:
         if word in self._word_meanings:
             return self._word_meanings[word].seen_features()
         return []
+    
+    
+    def sample_features(self, word, cond):
+        """
+        Sample features from a word's meaning. Could be probablisitic or
+        return all the features.
+        """
         
+        features = []
+        for v,f in self.meaning(word).sorted_features():
+            if cond == "probablisitic":
+                prob = float(v)
+                r = random.random()                
+                if prob > r:
+                    features.append(f)
+            else:
+                features.append(f)
+
+        return features
+        
+         
     #BM setValue
     def set_prob(self, word, feature, prob):
         """ 
@@ -134,7 +165,13 @@ class Lexicon:
             if feature in self._word_meanings[word]._meaning_probs:
                 return self._word_meanings[word]._meaning_probs[feature]
             return self._word_meanings[word]._unseen
-        return 0.0
+        
+        #TODO Aida 2015
+        #return 99. / (1. + 99)
+        return 1./100
+
+       # return 0.0
+        
 
     #BM getUnseen
     def unseen(self, word):
@@ -145,7 +182,13 @@ class Lexicon:
         """
         if word in self._word_meanings:
             return self._word_meanings[word]._unseen
+        
+        #TODO Aida 2015
+        #return 99. / (1. + 99)
+        
         return 0.0
+        
+        
 
     #BM setUnseen
     def set_unseen(self, word, unseen_value):
@@ -269,3 +312,6 @@ class Alignments:
         self._probs[wf] = []
         self._probs[wf].append(0.0)
         self._probs[wf].append({})
+
+
+

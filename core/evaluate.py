@@ -115,6 +115,7 @@ def sim_cosine(beta, meaning1, meaning2):
         meaning2_vec[i] = meaning2.prob(feature)
         i += 1
     
+
     cos = numpy.dot(meaning1_vec, meaning2_vec)
     
     seen_count = len(features)
