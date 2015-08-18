@@ -130,14 +130,6 @@ def sim_cosine(beta, meaning1, meaning2):
     return  cos / (x * y)
 
 
-    # Slower old code    
-    #learned_norm = pow(norm(learned_vec),2)
-    #learned_norm += (pow(learned.unseen_prob(), 2) * (beta - seen_count))
-    #true_norm = pow(norm(true_vec),2) 
-    #true_norm += (pow(true.unseen_prob(), 2) * (beta - seen_count))
-    #return cos / (math.sqrt(learned_norm *  true_norm))
-
-
 def calculate_similarity(beta, meaning1, meaning2, simtype):
     """
     Calculate and return the similarity score of Meaning 1 to Meaning 2

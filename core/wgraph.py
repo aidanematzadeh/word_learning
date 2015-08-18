@@ -1,8 +1,5 @@
-
-
-#from graph_tool.all import *
-
-#import matplotlib.pyplot as plt
+from graph_tool.all import *
+import matplotlib.pyplot as plt
 from operator import itemgetter
 
 from category import WordnetLabels

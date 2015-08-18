@@ -224,7 +224,6 @@ class Learner:
         
         #self._wordnet_categories = {}
 
-    #BM getLambdaFunction
     def get_lambda(self):
         """ Return a lambda smoothing factor. """
         if self._lambda < 1 and self._lambda > 0:
@@ -237,7 +236,6 @@ class Learner:
         """ Return a copy of the learned Lexicon. """
         return copy.deepcopy(self._learned_lexicon)
 
-    #BM calculateAvgComp
     def avg_acquisition(self, words, key):
         """ 
         Return the average acquisition score of words in words that match the
@@ -255,7 +253,6 @@ class Learner:
             return 0.0
         return total / float(vsize) 
     
-    #BM getComprehensionScore
     def acquisition_score(self, word):
         """ 
         Return the acquisition score of word. If "forgetting" is activated then 
@@ -268,7 +265,6 @@ class Learner:
             
         return self._acquisition_scores[word]
     
-    #BM calculateComprehensionScore
     def calculate_acquisition_score(self, word):
         """
         Calculate and return the acquisition score of word. If "forgetting" is
@@ -318,17 +314,9 @@ class Learner:
             denom += (self.calculate_prob_meaning(other_word, meaning, std) \
             * self._wordsp.frequency(other_word))
         
-        #print "numerator",  numerator, self._wordsp.frequency(word)
-        #print "denom", denom, numerator/denom
         return numerator/denom
 
 
-
-                
-
-
-    
-    #BM updateWordFProb
     def update_meaning_prob(self, word, time=-1):
         """
         Update the meaning probabilities of word in this learner's lexicon.
@@ -354,24 +342,11 @@ class Learner:
             
         sum_assoc += (self._beta * Lambda) # Smoothing
        
-        #TODO Aida coded Jan 27th 2015 -- for X&T
-        #print self._time, "-----------------------",word, self._wordsp.frequency(word),associations[feature] 
-        #Lambda = 1#1. #alpha=1, beta =1
-        #sum_assoc = self._wordsp.frequency(word) + 1 + 1 + 1#+ 1 + 1# + 99.0 +1 #+ 1 + 1 +  1 
-        #end of TODO 
 
         for feature in self._features:
             meaning_prob = (associations[feature] + Lambda) / sum_assoc
             self._learned_lexicon.set_prob(word, feature, meaning_prob)
         prob_unseen = Lambda / sum_assoc
-       
-        
-        #TODO Aida coded
-        #prob_unseen = 99. / (99. + 1.) # -  (associations[feature] + Lambda) / sum_assoc
-        #prob_unseen = 1.0/float(self._beta)
-        #end of TODO
-        
-        
         self._learned_lexicon.set_unseen(word, prob_unseen)
     
     
@@ -401,11 +376,9 @@ class Learner:
                 
                 assoc_sum += (val / math.pow(time-t_pr+1, align_decay))
             
-            #TODO do we need the log
             return math.log1p(assoc_sum)
             
         
-    #BM noveltyWord
     def novelty(self, word):
         """
         Return the novelty decay coefficient of word based on the last time it 
@@ -447,22 +420,6 @@ class Learner:
             # Can build categories
             category_probs = self.calculate_category_probs(words, features,\
             category_learner)
-        '''
-        # The following was used when we compared aw + learned ac to aw +uniformed ac
-        # We decided to compare aw to aw + learned ac
-        prob = 1.0 / float(self._beta)
-        if category_flag and category_learner is None:
-            # In this case there is no category learner to use
-            for word in words:
-                if word not in category_probs:
-                    category_probs[word] = {}
-                for feature in features:
-                    category_probs[word][feature] = prob
-        elif category_flag and category_learner is not None:
-            # Can build categories
-            category_probs = self.calculate_category_probs(words, features, 
-                                                       category_learner)
-        '''
 
         # Begin calculating the new alignment of a word given a feature, as:
         # alignment(w|f) = (p(f|w) + ep) / (sum(w' in words)p(f|w') + alpha*ep)
@@ -574,7 +531,6 @@ class Learner:
         return category_word_feature_probs
 
     
-    #BM processPair
     def process_pair(self, words, features, outdir, category_learner=None):
         """
         Process the pair words-features, two lists of words and features, 
@@ -620,7 +576,6 @@ class Learner:
                     if frequency > self._minfreq:
                         self._vocab.add(word)
                     
-    #BM processCorpus
     def process_corpus(self, corpus_path, outdir, category_learner=None, corpus=None):
         """
         Process the corpus file located at corpus_path, saving any gathered 
@@ -646,7 +601,6 @@ class Learner:
         learned = 0 # Number of words learned
         while words != []:
             
-            #BM CHANGED
             if self._maxtime > 0 and self._time >= self._maxtime:
                 break
 
@@ -811,7 +765,6 @@ class Learner:
             comps[word] = comp
         return comps
     
-    #BM getHeardCount
     def heard_count(self, minfreq, postags):
         """ 
         Return the number of different words that have been encountered and 
@@ -825,7 +778,6 @@ class Learner:
         words = self._wordsp.all_words(minfreq)
         return postag_count(words, postags)
 
-    #BM getLearnedCount
     def learned_count(self, postags): 
         """
         Return the number of words learned whose parts of speech tags are in the

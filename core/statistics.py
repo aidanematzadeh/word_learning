@@ -144,12 +144,10 @@ class WordPropsTable:
             wordprops._lrnd_vsiz = int(props[5])
             wordprops._last_time = int(props[6])
 
-    #BM hasWord
     def has_word(self, word):
         """ Return whether word has been encountered yet or not. """
         return word in self._words
 
-    #BM addWord
     def add_word(self, word, time, vsize):
         """ 
         Add a new entry in this table for word, encountered at time time with
@@ -159,7 +157,6 @@ class WordPropsTable:
         self._words[word] = WordProps(word, time, vsize)
         self._words_token_freq += 1
 
-    #BM inreaseWFreq
     def inc_frequency(self, word):
         """ Increment the frequency of word. """
         try:
@@ -170,7 +167,6 @@ class WordPropsTable:
             raise KeyError("Word '"+word+"' not in WordPropsFile, frequency cannot be incremented") 
         
 
-    #BM updateLastTime
     def update_last_time(self, word, time):
         """ Update the last time that word has been encountered to time. """
         try:
@@ -179,7 +175,6 @@ class WordPropsTable:
             raise KeyError("Word '"+word+"' not in WordPropsFile, time cannot be updated")
         
 
-    #BM updateLrndProps
     def update_lrnd_props(self, word, lrnd_time, lrnd_freq, lrnd_vsize):
         """ 
         Update the learned time, learned frequency, and learned vocabulary size
@@ -199,7 +194,6 @@ class WordPropsTable:
             raise KeyError("Word '"+word+"' not in WordPropsFile, properties cannot be updated")
         
      
-    #BM getWFreq
     def frequency(self, word):
         """ Return the frequency of word or 0 if word has not been encountered. """
         if word in self._words:
@@ -230,7 +224,6 @@ class WordPropsTable:
             return self._words[word]._first_time
         return -1
 
-    #BM getAllWords
     def all_words(self, minfreq):
         """ Return all words whose frequencies are greater than minfreq. """
         if minfreq <= 0:
@@ -242,7 +235,6 @@ class WordPropsTable:
                     allwords.append(w)
             return allwords
 
-    #BM getWCount
     def count(self, minfreq):
         """ Return the number of words whose frequency is greater than minfreq. """
         if minfreq <= 0:
@@ -834,7 +826,6 @@ class TimePropsTable:
         """ Reset this object by clearing the internal data structures. """
         self._times = {}
 
-    #BM addTime
     def add_time(self, time, heard, learned, avg_acq):
         """ 
         Add a new entry for properties for time time. The properties are:
