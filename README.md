@@ -5,14 +5,14 @@ This code provides a framework for modeling cross-situational word learning.
 The core algorithm implements the model of Fazly et al. (2010), which is an incremental and probabilistic word learner.
 
 
-The code also includes extensions of this model that allow investigation of:
+The code also includes extensions of the above model that allow investigation of:
 
-* Individual differences in word learning. (Nematzadeh et al., 2011, 2012a, 2014a)
-* The role of memory and attention in word learning. (Nematzadeh et al., 2012b, 2013)
+* Individual differences in word learning. (Nematzadeh et al., 2011, 2012a & 2014a)
+* The role of memory and attention in word learning. (Nematzadeh et al., 2012b & 2013)
 * The acquisition of a semantic network. (Nematzadeh et al., 2014b)
 
 
-An extension of this model is used to study novel word generalization (Nematzadeh et al., 2015); the code can be found [here](https://github.com/eringrant/novel_word_generalization).
+An extension of this model has been used to study novel word generalization (Nematzadeh et al., 2015); the code can be found [here](https://github.com/eringrant/novel_word_generalization).
 
 
 References:
