@@ -133,9 +133,10 @@ class WordPropsTable:
             line = handle.readline().strip("\n")
             if line=="":
                 break
-            w, l = line.split("=")
-            props = l.split(",")
             
+            w = line.split(",")[0]
+            props = line.split(",")[1:]
+
             self.add_word(w, int(props[1]), int(props[2]))
             wordprops = self._words[w]
             wordprops._wfreq = int(props[0])
