@@ -13,6 +13,7 @@ import wmmapping
 import statistics
 import evaluate
 import wgraph
+from compiler.ast import flatten
 """
 learn.py
 
@@ -95,6 +96,10 @@ class Learner:
             sys.exit(2)
         
         # Features
+        self.alignment_method = config.param_int("alignment-method")
+        # set the default alignment method to be FAS10
+        if self.alignment_method < 0:
+            self.alignment_method = 0
         self._dummy = config.param_bool("dummy")
         self._forget_flag = config.param_bool("forget")
         self._novelty_flag = config.param_bool("novelty")
@@ -177,6 +182,9 @@ class Learner:
         self._features = set()
         self._acquisition_scores = {}
         self._last_time = {}
+	# added one property to record acquisition score for each words in 
+	# each timestep for plotting and analyzing learning
+        self._acq_score_list = {}
 
         self._stopwords = stopwords
         self._wnlabels = WordnetLabels() 
@@ -403,7 +411,6 @@ class Learner:
         Update the alignments for each combination of word-feature pairs from
         the list words and set features. 
         """
-
         # for each word, update p(f|w) distribution
         if self._forget_flag:
             print "forget flag"
@@ -421,49 +428,187 @@ class Learner:
             category_probs = self.calculate_category_probs(words, features,\
             category_learner)
 
-        # Begin calculating the new alignment of a word given a feature, as:
-        # alignment(w|f) = (p(f|w) + ep) / (sum(w' in words)p(f|w') + alpha*ep)
-        for feature in features:
-            # Normalization term, sum(w' in words) p(f|w')
-            denom = 0.0
-            category_denom = 0.0
-
-            # Calculate the normalization terms
-            for word in words:
-                denom += self._learned_lexicon.prob(word,feature)
-                if category_flag:
-                    category_denom += category_probs[word][feature]
-
-            denom +=  (self._alpha * self._epsilon)
-            category_denom +=  (self._alpha * self._epsilon)
-
-            # Calculate alignment of each word 
-            for word in words:
-                
-                
-                # alignment(w|f) = (p(f|w) + ep) / normalization
-                alignment = (self._learned_lexicon.prob(word,feature) + self._epsilon) / denom
-                
-                # The weight used in alignment calculation
-                #weight = 0.5  #used in cogsci 2012 paper
-                weight = self._wordsp.frequency(word) / (1.0 + self._wordsp.frequency(word))
+        # create a dictionary whose key is (word, referent), value is the alignment(r|w,t)
+        w_r_alignment = {}
+	
+	if self.alignment_method == 0:
+	# align word with feature as described in FAS10 model
+	# Begin calculating the new alignment of a word given a feature, as:
+	# alignment(w|f) = (p(f|w) + ep) / (sum(w' in words)p(f|w') + alpha*ep)
+	    for feature in features:
+		# Normalization term, sum(w' in words) p(f|w')
+		denom = 0.0
+		category_denom = 0.0
     
-                if category_flag:
-                    alignment = weight * alignment
-                    category_prob = category_probs[word][feature]
-                    factor = (category_prob + self._epsilon) / category_denom
-                    alignment += (1 - weight) * factor
+		# Calculate the normalization terms
+		for word in words:
+		    denom += self._learned_lexicon.prob(word,feature)
+		    if category_flag:
+			category_denom += category_probs[word][feature]
+    
+		denom +=  (self._alpha * self._epsilon)
+		category_denom +=  (self._alpha * self._epsilon)
+    
+		# Calculate alignment of each word 
+		for word in words:
+		     
+		    # alignment(w|f) = (p(f|w) + ep) / normalization
+		    alignment = (self._learned_lexicon.prob(word,feature) + self._epsilon) / denom
+		    
+		    # The weight used in alignment calculation
+		    #weight = 0.5  #used in cogsci 2012 paper
+		    weight = self._wordsp.frequency(word) / (1.0 + self._wordsp.frequency(word))
+	
+		    if category_flag:
+			alignment = weight * alignment
+			category_prob = category_probs[word][feature]
+			factor = (category_prob + self._epsilon) / category_denom
+			alignment += (1 - weight) * factor
+		    
+		    if self._novelty_flag:
+			alignment *=  self.novelty(word)
+		    # Record the alignment at this time step and update association.
+		    if self._assoc_type == CONST.DEC_SUM:
+			self._aligns.add_decay_sum(word, feature, self._time, 
+			                           alignment, self._forget_decay)
+		    else:
+			self._aligns.add_alignment(word, feature, self._time, alignment)
+		# End alignment calculation for each word
+	    # End alignment calculation for each feature	    
+        
+        elif self.alignment_method == 1:
+	# referent competition
+        # alignment(word,referent) is calculated as cos_sim(w,r) / sum(r' in referents) cos_sim(w, r')
+            for word in words:
+                denom = 0
                 
-                if self._novelty_flag:
-                    alignment *=  self.novelty(word)
-                # Record the alignment at this time step and update association.
-                if self._assoc_type == CONST.DEC_SUM:
-                    self._aligns.add_decay_sum(word, feature, self._time, 
-                                               alignment, self._forget_decay)
-                else:
-                    self._aligns.add_alignment(word, feature, self._time, alignment)
-            # End alignment calculation for each word
-        # End alignment calculation for each feature
+                for referent in features:
+                    denom += evaluate.sim_cosine_word_ref(self._beta, self._learned_lexicon.meaning(word), referent)
+                
+                for referent in features:
+                    referent_index = features.index(referent)
+                   
+                    w_r_alignment[(word, referent_index)] = evaluate.sim_cosine_word_ref(self._beta, self._learned_lexicon.meaning(word), referent) / denom
+                    #print(w_r_alignment[(word, referent_index)])
+                    
+        elif self.alignment_method == 2:
+	# word-competition 
+	# alignment(word,referent) is calculated as cos_sim(w,r) / sum(w' in words) cos_sim(w, r)
+            #print('align ref with word')
+            for referent in features:
+                denom = 0
+                
+                for word in words:
+                    denom += evaluate.sim_cosine_word_ref(self._beta, self._learned_lexicon.meaning(word), referent)
+                
+                referent_index = features.index(referent)  
+                for word in words:
+                    w_r_alignment[(word, referent_index)] = evaluate.sim_cosine_word_ref(self._beta, self._learned_lexicon.meaning(word), referent) / denom
+        
+        elif self.alignment_method == 3:
+	# no competition among words or referents
+        # alignment(word, referent) is calculated as cos_sim(w,r)
+            #print('==========alignment3============')
+            for referent in features:
+                for word in words:
+                    referent_index = features.index(referent)
+                    w_r_alignment[(word, referent_index)] = evaluate.sim_cosine_word_ref(self._beta, self._learned_lexicon.meaning(word), referent)             
+            
+        elif self.alignment_method == 4:
+	# PMI pointwise mutual information
+        # alignment(word, referent) is calculated as sim(w,r) / [sum(w' in words) cos_sim(w', r)] * [sum(r' in referents) cos_sim(w, r)] 
+            #print('==========alignment4============')
+            r_denom = {}
+            w_denom = {}
+            sim_score = {}
+            
+            for referent in features:
+                referent_index = features.index(referent)
+                r_denom[referent_index] = 0
+                                
+                for word in words:
+                    temp_score = evaluate.sim_cosine_word_ref(self._beta, self._learned_lexicon.meaning(word), referent)
+                    sim_score[(word, referent_index)] = temp_score
+                    
+                    #print('cos sim between referent ' + str(referent_index) + 'and' + word + ': ' + str(sim_score[(word, referent_index)]))
+                    r_denom[referent_index] += temp_score
+                    
+                    if w_denom.has_key(word):
+                        w_denom[word] += temp_score
+                    else:
+                        w_denom[word] = temp_score
+                
+            #print(w_denom)
+            #print(r_denom)
+            for referent in features:
+                referent_index = features.index(referent)
+                for word in words:
+                    word_index = words.index(word)
+                    w_r_alignment[(word, referent_index)] = sim_score[(word, referent_index)] / (w_denom[word] * r_denom[referent_index])
+            #print(w_r_alignment)  
+            
+        elif self.alignment_method == 5:
+	# modified PMI (divided by sum of all word, referent pair)
+            r_denom = {}
+            w_denom = {}
+            sim_score = {}
+            
+            for referent in features:
+                
+                referent_index = features.index(referent)
+                r_denom[referent_index] = 0
+                                
+                for word in words:
+                    temp_score = evaluate.sim_cosine_word_ref(self._beta, self._learned_lexicon.meaning(word), referent)
+                    sim_score[(word, referent_index)] = temp_score
+                    
+                    r_denom[referent_index] += temp_score
+                    
+                    if w_denom.has_key(word):
+                        w_denom[word] += temp_score
+                    else:
+                        w_denom[word] = temp_score
+            
+            
+            # wr_denom is defined as sumation of all word, referent pair in the scene
+            wr_denom = sum(sim_score.values())
+            
+            for referent in features:
+                referent_index = features.index(referent)
+                for word in words:
+                    word_index = words.index(word)
+                    w_r_alignment[(word, referent_index)] = (wr_denom * sim_score[(word, referent_index)]) / (w_denom[word] * r_denom[referent_index])
+            #print(w_r_alignment)   
+	
+	# if word-referent alignmnt mechanism is adopetd, then update alignment(w,f)
+	# to be the max alignment(r|w,t) for all referent containing feature f
+	if self.alignment_method > 0:            
+       
+	    for feature in set(flatten(features)):
+		for word in words:
+		    alignment = 0
+		    for i in range(len(features)):
+			if feature in features[i]:
+			    # update alignment
+			    if alignment < w_r_alignment[(word, i)]:
+				alignment = w_r_alignment[(word, i)]         
+		    if category_flag:
+			print('category flag set!')
+			alignment = weight * alignment
+			category_prob = category_probs[word][feature]
+			factor = (category_prob + self._epsilon) / category_denom
+			alignment += (1 - weight) * factor
+		    
+		    if self._novelty_flag:
+			alignment *=  self.novelty(word)
+		    # Record the alignment at this time step and update association.
+		    if self._assoc_type == CONST.DEC_SUM:
+			self._aligns.add_decay_sum(word, feature, self._time, 
+			                           alignment, self._forget_decay)
+		    else:
+			
+			self._aligns.add_alignment(word, feature, self._time, alignment)
+
 
         #BM Added Jul 27 2012 for context statistics issue, FIND BETTER SOLUTION
         # for each word, update p(f|w) distribution
@@ -535,18 +680,29 @@ class Learner:
         """
         Process the pair words-features, two lists of words and features, 
         respectively, to be learned from. 
-        
+        Edited by Shanshan Huang
+        For FAS model, variable features is a flat list containing all 
+        features in the scene representation. For all other word-referent 
+        alignment models, variable features stores a list of referents instead, 
+        and each referent is a list of feartures that belongs to it.
         """
         # Time calculated w.r.t words-features pairings being processed
         self._time += 1
         
         # Add current features to the set of all seen features
-        for feature in features:
+        for feature in set(flatten(features)):
             self._features.add(feature)
 
         if self._dummy:
             words.append("dummy")
-        
+	    
+	# if the input data separates the scene representation by referent 
+	#(i.e. contains semicolons between referents), the progam is able to
+	# ignore 'referents' and align word and features directly as in FAS10
+	# flatten list of referents to be a flat list of features to feed in FAS
+	if self.alignment_method == 0:
+	    features = flatten(features)
+	        
         # Calculate the alignment probabilities and learned lexicon probabilities
         self.calculate_alignments(words, features, outdir, category_learner)
         
@@ -567,12 +723,22 @@ class Learner:
                 
                 # Get acquisition score to determine if word is now learned
                 acq = self.calculate_acquisition_score(word)
+                
+                # Shanshan Dec 2016
+                # ===============record acquisition_score===================
+                if not self._acq_score_list.has_key(word):
+                    self._acq_score_list[word] = {}
+                # ==========================================================    
+                self._acq_score_list[word][t] = acq
+                    
                 if word not in self._vocab and (acq >= self._theta):
                     lrnd_count = self.learned_count(self._postags)
                     frequency = self._wordsp.frequency(word)
                     
+                    # print ("entering update learned prob ...")
                     self._wordsp.update_lrnd_props(word, t, frequency, lrnd_count)
-    
+                    # print ("exiting update learned prob ...")
+                    
                     if frequency > self._minfreq:
                         self._vocab.add(word)
                     

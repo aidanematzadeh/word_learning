@@ -130,6 +130,44 @@ def sim_cosine(beta, meaning1, meaning2):
     return  cos / (x * y)
 
 
+def sim_cosine_word_ref(beta, learned_meaning, feature_set):
+    """
+    Calculate the cosine similarity between
+    the learned meaning probability distribution of a given words and 
+    the feature-vector of a referent with smoothing beta
+    This function is used in paper 
+    http://www.cs.toronto.edu/~aida/papers/nematzadeh_etal_17_cogsci_alignments.pdf
+    where the association score is calculated and updated.
+    """
+    features = learned_meaning.seen_features() | set(feature_set)
+    
+    learned_vec = numpy.zeros(len(features))
+    feature_vec = numpy.zeros(len(features))
+    
+    i = 0
+    
+    for feature in features:
+        
+        learned_vec[i] = learned_meaning.prob(feature)
+            
+        if feature not in feature_set:
+            feature_vec[i] = 0
+        else:
+            feature_vec[i] = 1
+        i += 1
+    
+    cos = numpy.dot(learned_vec, feature_vec)
+    seen_count = len(features)
+    cos += (beta - seen_count) * learned_meaning.unseen_prob() * (1/float(beta))
+    
+    x = math.sqrt(numpy.dot(learned_vec, learned_vec) + (pow(learned_meaning.unseen_prob(), 2) * (beta - seen_count)))   
+    y = math.sqrt(numpy.dot(feature_vec, feature_vec) + (pow((1/float(beta)), 2) * (beta - seen_count)))
+    
+    return  cos / (x * y)    
+
+
+
+
 def calculate_similarity(beta, meaning1, meaning2, simtype):
     """
     Calculate and return the similarity score of Meaning 1 to Meaning 2

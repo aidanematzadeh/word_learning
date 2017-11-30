@@ -103,13 +103,13 @@ def main():
     else:
         learner.process_corpus(corpus_path, outdir)
 
-    #output = open("learner.pkl", "wb")
-    #pickle.dump(learner, output)
 
-    #if learner._stats_flag:
-    #    write_learned_lex(learner, outdir)
-    #    write_alignments(learner, outdir)
-        
+    if learner._stats_flag:
+        print "output files ..... "
+        # write_learned_lex(learner, outdir)
+        # write_alignments(learner, outdir)
+        write_acq_score_timestamp(learner, outdir)
+        print("alignment", learner.alignment_method, corpus_path)        
 
 #===============================================================================
 #        Sample methods for viewing the data
@@ -186,6 +186,29 @@ def write_learned_lex(learner, outdir):
         comp = "   << %f >>\n\n" % (learner.acquisition_score(word))
         output.write(comp)
     output.close()
+    
+def write_acq_score_timestamp(learner, outdir):
+    '''
+    added by Shanshan Huang
+    Record the acquisition score in each time step in pickle format,
+    with the option to save the whole learner object into a single pickle
+    (warning: very large!!!!)
+    These pickle files are later used to plot learning graphs used for 
+    analysis in the paper
+    '''
+    
+#    with open(outdir+'/learned_meaning.pkl', "wb") as handle:
+#        pickle.dump(learner._learned_lexicon, handle) 
+
+#    with open(outdir+'/acq_scores.pkl', "wb") as handle:
+#        pickle.dump(learner._acquisition_scores, handle) 
+    
+    with open(outdir+'/acq_score_timestamp.pkl', "wb") as handle:
+        pickle.dump(learner._acq_score_list, handle)  
+
+#    with open(outdir+'/learner.pkl', "wb") as handle:
+#        pickle.dump(learner, handle)
+
 
 
 #===============================================================================

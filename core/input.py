@@ -45,18 +45,41 @@ class Corpus:
             return([],[])
         else:
             sentence = self._handle.readline().strip('\n') + " "
-            meaning = self._handle.readline().strip('\n') + ","
-            meaning = meaning.replace(",,",",") 
+            meaning = self._handle.readline().strip('\n')
             
             words = re.findall("([^ ]+)\s", sentence) 
             del words[0] # Remove leading "SENTENCE: " identifier
             words = list(set(words)) # Remove duplicates
-        
-            features = re.findall("([^,]+),", meaning)
-            del features[0]
-            features = list(set(features)) 
-        
-            return (words, features) 
+            
+            # if no referent(i.e. feature set) found, 
+            # reads in each feature seperately and independently
+            if not (';' in meaning):
+                
+                features = re.findall(",([^,]+)", meaning)
+                features = list(set(features))
+                return (words, features)             
+            
+            # otherwise switch to referent reading mode, split the 
+            # features in the scene representation according to each referent
+            else:
+                # get rid of the leading "SEM_REP"
+                feature_set = meaning[10:]
+                feature_set =re.findall("([^;]+);", feature_set) 
+                
+                # create a list containing all individual faetures
+                # for each referent
+                list_of_referent = []
+                for referent in feature_set:
+                    features = re.findall("([^,]+)", referent) 
+                    if features:
+                        list_of_referent.append(features)
+                
+                set_of_referent = []       
+                # remove duplicates
+                for referent in list_of_referent:
+                    if referent not in set_of_referent:
+                        set_of_referent.append(referent)   
+                return (words, set_of_referent) 
 
     def close(self):
         """ Close the file backing this Corpus. """
